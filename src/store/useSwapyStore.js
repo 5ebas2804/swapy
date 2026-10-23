@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { ACCOUNTS, BATTERIES, PRICING, SAFETY, SEED_RESERVATIONS, STATIONS } from '../data/mockData'
+import { ACCOUNTS, BATTERIES, LIVE_SENSOR, PRICING, RFID_TAGS, SAFETY, SEED_RESERVATIONS, STATIONS } from '../data/mockData'
+import { connectLiveSensor, liveReading } from './liveSensor'
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
 const jitter = (amp) => (Math.random() - 0.5) * 2 * amp
@@ -59,7 +60,11 @@ function initialShared() {
   const reserved = new Set(reservations.map((r) => r.batteryId))
   return {
     users: ACCOUNTS,
-    batteries: BATTERIES.map((b) => (reserved.has(b.id) ? { ...b, status: 'reserved' } : b)),
+    batteries: BATTERIES.map((b) => ({
+      ...b,
+      ...(reserved.has(b.id) && { status: 'reserved' }),
+      ...(b.id === LIVE_SENSOR.BATTERY_ID && { live: { online: false } }), // casillero con sensor real
+    })),
     reservations, // reservas activas de todos los repartidores
     cancelled: {}, // { [userId]: reserva invalidada por el sistema u operador, con reason }
     events: [], // bitácora IoT (más reciente primero)
@@ -77,6 +82,7 @@ function dropReservations(reservations, cancelled, reasons /* { [batteryId]: men
 }
 
 let telemetryTimer = null
+let disconnectSensor = null
 
 // Un paso de telemetría para una batería: aplica ruido, carga y fallas inyectadas.
 function tickBattery(b) {
@@ -106,6 +112,39 @@ function tickBattery(b) {
   if (status === 'charging' && soc >= 90) status = 'ready'
 
   return { ...b, soc: round(soc, 1), temp: round(temp, 1), cells: cells.map((v) => round(v, 3)), status }
+}
+
+// SoC aproximado a partir del voltaje en reposo de una celda Li-ion (curva típica de una 18650).
+const OCV = [[3.0, 0], [3.3, 5], [3.6, 20], [3.7, 35], [3.8, 55], [3.9, 70], [4.0, 82], [4.1, 92], [4.2, 100]]
+function socFromCell(v) {
+  if (v <= OCV[0][0]) return 0
+  for (let i = 1; i < OCV.length; i++) {
+    const [v1, s1] = OCV[i]
+    const [v0, s0] = OCV[i - 1]
+    if (v <= v1) return s0 + ((v - v0) / (v1 - v0)) * (s1 - s0)
+  }
+  return 100
+}
+
+// Casillero con sensor real: usa la última lectura del ESP32; si no hay, sigue simulado.
+function tickLiveBattery(b, now) {
+  const r = liveReading(now)
+  if (!r) {
+    const sim = tickBattery(b)
+    return b.live?.online ? { ...sim, live: { ...b.live, online: false } } : sim
+  }
+  const present = r.loadV >= LIVE_SENSOR.MIN_PRESENT_V
+  const cellV = round(r.loadV / LIVE_SENSOR.SERIES_CELLS, 3)
+  const soc = present ? round(socFromCell(cellV), 1) : b.soc
+  const status = b.status === 'ready' || b.status === 'charging' ? (soc >= 90 ? 'ready' : 'charging') : b.status
+  return {
+    ...b,
+    status,
+    soc,
+    temp: round(r.temp, 1),
+    cells: present ? Array(LIVE_SENSOR.SERIES_CELLS).fill(cellV) : b.cells,
+    live: { ...b.live, online: true, present, busV: r.busV, loadV: r.loadV, mA: r.mA, mW: r.mW },
+  }
 }
 
 // Regla de seguridad del "firmware": si algo cruza el umbral crítico, bloquear el casillero.
@@ -316,7 +355,8 @@ export const useSwapyStore = create((set, get) => ({
       const newEvents = []
       const reasons = {}
       let batteries = s.batteries.map((b) => {
-        const { battery, event } = applySafety(tickBattery(b), now)
+        const next = b.id === LIVE_SENSOR.BATTERY_ID ? tickLiveBattery(b, now) : tickBattery(b)
+        const { battery, event } = applySafety(next, now)
         if (event) {
           newEvents.push(event)
           reasons[b.id] = event.message
@@ -340,13 +380,33 @@ export const useSwapyStore = create((set, get) => ({
         events: newEvents.length ? pushEvents(s.events, ...newEvents) : s.events,
       })
     }, SAFETY.TELEMETRY_MS)
+    disconnectSensor = connectLiveSensor({ onRfid: get().readRfid })
     set({ telemetryRunning: true })
   },
 
   stopTelemetry: () => {
     clearInterval(telemetryTimer)
     telemetryTimer = null
+    disconnectSensor?.()
+    disconnectSensor = null
     set({ telemetryRunning: false })
+  },
+
+  // El lector RC522 del casillero real detectó una etiqueta.
+  readRfid: (uid) => {
+    const known = RFID_TAGS[uid]
+    set((s) => {
+      const b = s.batteries.find((x) => x.id === LIVE_SENSOR.BATTERY_ID)
+      if (!b) return {}
+      return {
+        batteries: s.batteries.map((x) => (x === b ? { ...x, live: { ...x.live, uid, uidAt: Date.now() } } : x)),
+        events: pushEvents(s.events, makeEvent(
+          known ? 'success' : 'warning',
+          known ? `RFID en ${b.lockerId}: batería ${known} identificada (${uid})` : `RFID en ${b.lockerId}: etiqueta desconocida ${uid}`,
+          { batteryId: b.id, stationId: b.stationId, lockerId: b.lockerId },
+        )),
+      }
+    })
   },
 
   // ---------- Panel de demostración / operador ----------

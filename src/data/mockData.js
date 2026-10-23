@@ -10,6 +10,23 @@ export const SAFETY = {
   TELEMETRY_MS: 500, // frecuencia de muestreo simulada
 }
 
+// Sensor físico del prototipo (ESP32 + INA219 + LM35 + RC522, carpeta "BSS Swapy").
+// El firmware publica por MQTT a un broker público y la app se suscribe por WebSocket seguro.
+// Mientras no lleguen lecturas, el casillero sigue simulado como los demás.
+export const LIVE_SENSOR = {
+  BATTERY_ID: 'SWP-B-0101', // casillero Chapinero L1
+  BROKER_URL: 'wss://broker.hivemq.com:8884/mqtt',
+  TOPIC: 'swapy-5ebas2804/ST-CHA-01/L1', // + /telemetry, /rfid, /status (igual que en el firmware)
+  SERIES_CELLS: 1, // celdas en serie que mide el INA219 (1 = una sola 18650)
+  STALE_MS: 5000, // sin lecturas por 5 s → el casillero vuelve a simulación
+  MIN_PRESENT_V: 0.5, // por debajo: no hay batería conectada al INA219
+}
+
+// Etiquetas RFID conocidas → batería. Agrega aquí el UID que muestra el monitor serial.
+export const RFID_TAGS = {
+  // 'A1:B2:C3:D4': 'SWP-B-0101',
+}
+
 export const PRICING = {
   SWAP_COP: 4500, // costo por intercambio
   WELCOME_BONUS_COP: 5000, // bono al verificar una cuenta nueva

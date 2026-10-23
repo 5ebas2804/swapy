@@ -17,7 +17,8 @@ export default function DemoPanel({ battery }) {
 
   if (!battery) return null
   const locked = battery.status === 'locked'
-  const busy = locked || !!battery.fault
+  const realSensor = !!battery.live?.online // con datos reales la falla se provoca en el hardware
+  const busy = locked || !!battery.fault || realSensor
   const latency = locked && battery.faultInjectedAt ? battery.lockedAt - battery.faultInjectedAt : null
   const elapsed = detecting ? now - battery.faultInjectedAt : null
 
@@ -31,6 +32,12 @@ export default function DemoPanel({ battery }) {
       <p className="mb-3 text-xs text-slate-400">
         Objetivo: <span className="font-mono text-slate-200">{battery.lockerId} · {battery.id}</span>
       </p>
+
+      {realSensor && (
+        <p className="mb-3 rounded-xl bg-swapy-400/10 px-3 py-2 text-xs text-swapy-400">
+          Este casillero usa el sensor real: el bloqueo se dispara con las lecturas del ESP32.
+        </p>
+      )}
 
       <div className="grid gap-2">
         <button

@@ -172,7 +172,7 @@ export default function AdminDashboard() {
 
               <ChartCard
                 title="Voltaje por celda"
-                subtitle="Lecturas BMS · 4 celdas Li-ion"
+                subtitle={`Lecturas BMS · ${selected.cells.length} ${selected.cells.length === 1 ? 'celda' : 'celdas'} Li-ion${selected.live?.online ? ' · sensor real' : ''}`}
                 value={`${Math.min(...selected.cells).toFixed(2)} V mín.`}
                 valueClass={Math.min(...selected.cells) <= SAFETY.CELL_V_CRITICAL ? 'text-rose-400' : ''}
                 legend={selected.cells.map((_, i) => ({ label: `Celda ${i + 1}`, color: SERIES_COLORS[i] }))}

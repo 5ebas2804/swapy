@@ -1,4 +1,4 @@
-import { BatteryCharging, CheckCircle2, Clock, HeartPulse, Lock, Thermometer } from 'lucide-react'
+import { BatteryCharging, CheckCircle2, Clock, HeartPulse, Lock, Nfc, Radio, Thermometer } from 'lucide-react'
 import { SAFETY } from '../../data/mockData'
 import Avatar from '../Avatar'
 
@@ -44,6 +44,8 @@ export default function BatteryCard({ battery: b, reservedBy, selected, onSelect
         </span>
       </div>
 
+      {b.live && <LiveSensor live={b.live} />}
+
       {/* SoC */}
       <div className="relative mb-3">
         <div className="mb-1 flex justify-between text-[11px] text-slate-400">
@@ -56,7 +58,7 @@ export default function BatteryCard({ battery: b, reservedBy, selected, onSelect
       </div>
 
       {/* celdas */}
-      <div className="relative mb-3 grid grid-cols-4 gap-1.5">
+      <div className="relative mb-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${b.cells.length}, minmax(0, 1fr))` }}>
         {b.cells.map((v, i) => {
           const bad = v <= SAFETY.CELL_V_CRITICAL
           const low = v < SAFETY.CELL_V_MIN
@@ -102,5 +104,34 @@ export default function BatteryCard({ battery: b, reservedBy, selected, onSelect
         <p className="relative mt-3 rounded-lg bg-rose-500/15 px-2 py-1.5 text-[11px] text-rose-200">{b.lockReason}</p>
       )}
     </button>
+  )
+}
+
+// Lecturas del ESP32 real (INA219 + RC522) para el casillero que tiene el sensor.
+function LiveSensor({ live }) {
+  return (
+    <div className="relative mb-3 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-[11px]">
+      <p className={`flex items-center gap-1.5 font-semibold ${live.online ? 'text-swapy-400' : 'text-slate-400'}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${live.online ? 'animate-pulse bg-swapy-400' : 'bg-slate-500'}`} />
+        <Radio size={11} />
+        {live.online ? 'Sensor real · en vivo' : 'Sensor sin señal · simulado'}
+      </p>
+      {live.online && (
+        live.present ? (
+          <p className="mt-1 flex justify-between font-mono text-slate-300">
+            <span>{live.loadV.toFixed(2)} V</span>
+            <span>{live.mA.toFixed(0)} mA</span>
+            <span>{live.mW.toFixed(0)} mW</span>
+          </p>
+        ) : (
+          <p className="mt-1 text-amber-300">Sin batería conectada al INA219</p>
+        )
+      )}
+      {live.uid && (
+        <p className="mt-1 flex items-center gap-1 text-slate-400">
+          <Nfc size={11} /> RFID <span className="font-mono text-slate-200">{live.uid}</span>
+        </p>
+      )}
+    </div>
   )
 }
