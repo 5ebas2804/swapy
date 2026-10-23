@@ -1,7 +1,7 @@
 {
   "name": "Swapy — Intercambio de baterías",
   "short_name": "Swapy",
-  "start_url": "./app",
+  "start_url": "./#/app",
   "display": "standalone",
   "background_color": "#0b1020",
   "theme_color": "#0b1020",
